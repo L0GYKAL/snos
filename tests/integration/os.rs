@@ -10,7 +10,7 @@ use starknet_api::stark_felt;
 use starknet_api::transaction::{Fee, TransactionVersion};
 
 use crate::common::block_context;
-use crate::common::state::{initial_state_cairo0, initial_state_cairo1, initial_state_syscalls, StarknetTestState};
+use crate::common::state::{initial_state_cairo0, initial_state_cairo1, initial_state_syscalls, StarknetTestState, initial_state_erc20};
 use crate::common::transaction_utils::execute_txs_and_run_os;
 
 #[rstest]
@@ -199,4 +199,67 @@ async fn syscalls_cairo1(
     )
     .await
     .expect("OS run failed");
+}
+
+#[rstest]
+// We need to use the multi_thread runtime to use task::block_in_place for sync -> async calls.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn mint_tokens_test(
+    #[future] initial_state_erc20: StarknetTestState,
+    block_context: BlockContext,
+    max_fee: Fee,
+) {
+    let tx_version = TransactionVersion::ZERO;
+    let initial_state = initial_state_erc20.await;
+    let mut nonce_manager = NonceManager::default();
+
+    let sender_address = initial_state.cairo1_contracts.get("account_with_dummy_validate").unwrap().address;
+    let erc20_address = initial_state.cairo1_contracts.get("erc20_cairo_erc_20.contract_class").unwrap().address;
+
+    // test_storage_read_write
+    // let test_storage_read_write_tx = test_utils::account_invoke_tx(invoke_tx_args! {
+    //     max_fee,
+    //     sender_address: sender_address,
+    //     calldata: create_calldata(contract_address, "test_storage_read_write", &[StarkFelt::TWO, StarkFelt::ONE]),
+    //     version: tx_version,
+    //     nonce: nonce_manager.next(sender_address),
+    // });
+
+    let test_init_tokens_tx = test_utils::account_invoke_tx(invoke_tx_args! {
+        max_fee,
+        sender_address: sender_address,
+        calldata: create_calldata(erc20_address, "init", &[]),
+        version: tx_version,
+        nonce: nonce_manager.next(sender_address),
+    });
+
+    let test_mint_tokens_tx = test_utils::account_invoke_tx(invoke_tx_args! {
+        max_fee,
+        sender_address: sender_address,
+        calldata: create_calldata(erc20_address, "mint", &[StarkFelt::from(sender_address), StarkFelt::from(2000_u128), StarkFelt::from(0_u128)]), //TODO: change the arguments
+        version: tx_version,
+        nonce: nonce_manager.next(sender_address),
+    });
+
+    let txs = vec![
+        test_init_tokens_tx,
+        test_mint_tokens_tx,
+    ]
+    .into_iter()
+    .map(Into::into)
+    .collect();
+
+    let result = execute_txs_and_run_os(
+        initial_state.cached_state,
+        block_context,
+        txs,
+        initial_state.cairo0_compiled_classes,
+        initial_state.cairo1_compiled_classes,
+    )
+        .await;
+    assert!(result.is_ok());
+    let size = result.unwrap().0.memory.to_bytes().len();
+    print!("{}", size);
+
+    //TODO: import and call the madara_rpc to call the prover
 }
