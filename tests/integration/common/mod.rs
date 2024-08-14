@@ -6,19 +6,19 @@ use cairo_vm::hint_processor::builtin_hint_processor::builtin_hint_processor_def
 use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use cairo_vm::vm::runners::cairo_runner::CairoRunner;
-use cairo_vm::vm::vm_core::VirtualMachine;
 use rstest::fixture;
 
 pub mod block_utils;
-mod blockifier_contracts;
+pub mod blockifier_contracts;
 mod contract_fixtures;
+pub mod os_itest_contracts;
 pub mod state;
 pub mod transaction_utils;
 pub mod utils;
 
 #[fixture]
 pub fn setup_runner() -> CairoRunner {
-    let program_content = fs::read("build/programs/fact.json").unwrap();
+    let program_content = fs::read("../build/programs/fact.json").unwrap();
 
     let mut hint_processor = BuiltinHintProcessor::new_empty();
 
@@ -50,7 +50,7 @@ pub fn setup_pie(setup_runner: CairoRunner) -> CairoPie {
 
 #[fixture]
 pub fn os_pie_string() -> String {
-    std::fs::read_to_string("tests/integration/common/data/output_pie.b64").unwrap()
+    std::fs::read_to_string("integration/common/data/output_pie.b64").unwrap()
 }
 
 #[fixture]

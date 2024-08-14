@@ -5,38 +5,41 @@ use blockifier::execution::contract_class::ContractClass::{V0, V1};
 use blockifier::state::cached_state::CachedState;
 use blockifier::state::state_api::{State, StateReader};
 use blockifier::transaction::objects::TransactionExecutionInfo;
-use cairo_lang_starknet_classes::casm_contract_class::CasmContractClass;
 use cairo_vm::Felt252;
 use num_bigint::BigUint;
-use snos::config::{StarknetGeneralConfig, StarknetOsConfig, STORED_BLOCK_HASH_BUFFER};
-use snos::crypto::pedersen::PedersenHash;
-use snos::crypto::poseidon::PoseidonHash;
-use snos::execution::helper::ExecutionHelperWrapper;
-use snos::io::input::StarknetOsInput;
-use snos::io::InternalTransaction;
-use snos::starknet::business_logic::fact_state::contract_class_objects::ContractClassLeaf;
-use snos::starknet::business_logic::fact_state::contract_state_objects::ContractState;
-use snos::starknet::business_logic::fact_state::state::SharedState;
-use snos::starknet::starknet_storage::CommitmentInfo;
-use snos::starkware_utils::commitment_tree::base_types::{Height, TreeIndex};
-use snos::storage::dict_storage::DictStorage;
-use snos::storage::storage_utils::build_starknet_storage_async;
-use snos::utils::{felt_api2vm, felt_vm2api};
 use starknet_api::core::{ClassHash, ContractAddress, PatriciaKey};
-use starknet_api::deprecated_contract_class::ContractClass as DeprecatedContractClass;
 use starknet_api::hash::StarkHash;
+use starknet_os::config::{StarknetGeneralConfig, StarknetOsConfig, STORED_BLOCK_HASH_BUFFER};
+use starknet_os::crypto::pedersen::PedersenHash;
+use starknet_os::crypto::poseidon::PoseidonHash;
+use starknet_os::execution::helper::ExecutionHelperWrapper;
+use starknet_os::io::input::StarknetOsInput;
+use starknet_os::io::InternalTransaction;
+use starknet_os::starknet::business_logic::fact_state::contract_class_objects::ContractClassLeaf;
+use starknet_os::starknet::business_logic::fact_state::contract_state_objects::ContractState;
+use starknet_os::starknet::business_logic::fact_state::state::SharedState;
+use starknet_os::starknet::starknet_storage::CommitmentInfo;
+use starknet_os::starkware_utils::commitment_tree::base_types::{Height, TreeIndex};
+use starknet_os::storage::storage::Storage;
+use starknet_os::storage::storage_utils::build_starknet_storage_async;
+use starknet_os::utils::{felt_api2vm, felt_vm2api};
+use starknet_os_types::casm_contract_class::GenericCasmContractClass;
+use starknet_os_types::deprecated_compiled_class::GenericDeprecatedCompiledClass;
 
 use crate::common::transaction_utils::to_felt252;
 
-pub async fn os_hints(
+pub async fn os_hints<S>(
     block_context: &BlockContext,
-    mut blockifier_state: CachedState<SharedState<DictStorage, PedersenHash>>,
+    mut blockifier_state: CachedState<SharedState<S, PedersenHash>>,
     transactions: Vec<InternalTransaction>,
     tx_execution_infos: Vec<TransactionExecutionInfo>,
-    deprecated_compiled_classes: HashMap<ClassHash, DeprecatedContractClass>,
-    compiled_classes: HashMap<ClassHash, CasmContractClass>,
-) -> (StarknetOsInput, ExecutionHelperWrapper) {
-    let mut compiled_class_hash_to_compiled_class: HashMap<Felt252, CasmContractClass> = HashMap::new();
+    deprecated_compiled_classes: HashMap<ClassHash, GenericDeprecatedCompiledClass>,
+    compiled_classes: HashMap<ClassHash, GenericCasmContractClass>,
+) -> (StarknetOsInput, ExecutionHelperWrapper<S>)
+where
+    S: Storage,
+{
+    let mut compiled_class_hash_to_compiled_class: HashMap<Felt252, GenericCasmContractClass> = HashMap::new();
 
     let mut contracts: HashMap<Felt252, ContractState> = blockifier_state
         .state
@@ -76,12 +79,13 @@ pub async fn os_hints(
         match blockifier_class {
             V0(_) => {} // deprecated_compiled_classes are passed in by caller
             V1(_) => {
-                let class =
-                    compiled_classes.get(&class_hash).expect(format!("No class given for {:?}", class_hash).as_str());
-                let compiled_class_hash = Felt252::from_bytes_be(&class.compiled_class_hash().to_be_bytes());
+                let compiled_class =
+                    compiled_classes.get(&class_hash).unwrap_or_else(|| panic!("No class given for {:?}", class_hash));
+                let compiled_class_hash = compiled_class.class_hash().expect("Failed to compute class hash");
+                let compiled_class_hash = Felt252::from(compiled_class_hash);
                 class_hash_to_compiled_class_hash.insert(to_felt252(&class_hash.0), compiled_class_hash);
 
-                compiled_class_hash_to_compiled_class.insert(compiled_class_hash, class.clone());
+                compiled_class_hash_to_compiled_class.insert(compiled_class_hash, compiled_class.clone());
             }
         };
     }
@@ -103,12 +107,12 @@ pub async fn os_hints(
     }
 
     log::debug!("deprecated classes");
-    for (c, _) in &deprecated_compiled_classes {
+    for c in deprecated_compiled_classes.keys() {
         log::debug!("\t{}", c);
     }
 
     log::debug!("classes");
-    for (c, _) in &compiled_classes {
+    for c in compiled_classes.keys() {
         log::debug!("\t{}", c);
     }
 
@@ -140,7 +144,7 @@ pub async fn os_hints(
     let contract_indices: Vec<TreeIndex> = contract_indices.into_iter().collect();
 
     let contract_state_commitment_info =
-        CommitmentInfo::create_from_expected_updated_tree::<DictStorage, PedersenHash, ContractState>(
+        CommitmentInfo::create_from_expected_updated_tree::<S, PedersenHash, ContractState>(
             previous_state.contract_states.clone(),
             updated_state.contract_states.clone(),
             &contract_indices,
@@ -157,7 +161,7 @@ pub async fn os_hints(
         .collect();
 
     let contract_class_commitment_info =
-        CommitmentInfo::create_from_expected_updated_tree::<DictStorage, PoseidonHash, ContractClassLeaf>(
+        CommitmentInfo::create_from_expected_updated_tree::<S, PoseidonHash, ContractClassLeaf>(
             previous_state.contract_classes.clone().expect("previous state should have class trie"),
             updated_state.contract_classes.clone().expect("updated state should have class trie"),
             &accessed_contracts,
@@ -185,7 +189,7 @@ pub async fn os_hints(
     let execution_helper = ExecutionHelperWrapper::new(
         contract_storage_map,
         tx_execution_infos,
-        &block_context,
+        block_context,
         (Felt252::from(block_context.block_info().block_number.0 - STORED_BLOCK_HASH_BUFFER), Felt252::from(66_u64)),
     );
 

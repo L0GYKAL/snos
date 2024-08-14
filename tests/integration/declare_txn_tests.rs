@@ -4,14 +4,14 @@ use blockifier::execution::contract_class::ClassInfo;
 use blockifier::test_utils::NonceManager;
 use blockifier::transaction::test_utils::{calculate_class_info_for_testing, max_fee};
 use rstest::rstest;
-use snos::crypto::poseidon::PoseidonHash;
-use snos::starknet::business_logic::utils::write_class_facts;
-use snos::storage::storage_utils::{compiled_contract_class_cl2vm, deprecated_contract_class_api2vm};
 use starknet_api::core::CompiledClassHash;
 use starknet_api::transaction::{Fee, Resource, ResourceBounds, ResourceBoundsMapping, TransactionVersion};
+use starknet_os::crypto::poseidon::PoseidonHash;
+use starknet_os::starknet::business_logic::utils::write_class_facts;
 
 use crate::common::block_context;
-use crate::common::state::{initial_state_cairo0, initial_state_cairo1, load_cairo1_contract, StarknetTestState};
+use crate::common::blockifier_contracts::load_cairo1_feature_contract;
+use crate::common::state::{initial_state_cairo0, initial_state_cairo1, StarknetTestState};
 use crate::common::transaction_utils::execute_txs_and_run_os;
 
 // Copied from the non-public Blockifier fn
@@ -36,12 +36,12 @@ async fn declare_v3_cairo1_account(
     let tx_version = TransactionVersion::THREE;
     let mut nonce_manager = NonceManager::default();
 
-    let account_contract = initial_state.cairo1_contracts.get("account_with_dummy_validate").unwrap();
+    let account_contract = initial_state.deployed_cairo1_contracts.get("account_with_dummy_validate").unwrap();
 
     // We want to declare a fresh (never-before-declared) contract, so we don't want to reuse
     // anything from the test fixtures, and we need to do it "by hand". The transaction will
     // error if the class trie already contains the class we are trying to deploy.
-    let (_, sierra_class, casm_class) = load_cairo1_contract("empty_contract");
+    let (_, sierra_class, casm_class) = load_cairo1_feature_contract("empty_contract");
 
     // We also need to write the class and compiled class facts so that the FFC will contain them
     // during block re-execution.
@@ -51,11 +51,11 @@ async fn declare_v3_cairo1_account(
 
     let sender_address = account_contract.address;
 
-    let contract_class = compiled_contract_class_cl2vm(&casm_class).unwrap();
+    let contract_class = casm_class.to_blockifier_contract_class().unwrap();
     let class_hash = starknet_api::core::ClassHash::try_from(contract_class_hash).unwrap();
     let compiled_class_hash = CompiledClassHash::try_from(compiled_class_hash).unwrap();
 
-    let class_info = ClassInfo::new(&contract_class, sierra_class.sierra_program.len(), 0).unwrap();
+    let class_info = ClassInfo::new(&contract_class.into(), sierra_class.sierra_program.len(), 0).unwrap();
 
     let declare_tx = blockifier::test_utils::declare::declare_tx(
         declare_tx_args! {
@@ -63,7 +63,7 @@ async fn declare_v3_cairo1_account(
             sender_address,
             version: tx_version,
             nonce: nonce_manager.next(sender_address),
-            class_hash: class_hash.into(),
+            class_hash: class_hash,
             compiled_class_hash,
             resource_bounds: default_testing_resource_bounds(),
         },
@@ -95,12 +95,12 @@ async fn declare_cairo1_account(
     let tx_version = TransactionVersion::TWO;
     let mut nonce_manager = NonceManager::default();
 
-    let account_contract = initial_state.cairo1_contracts.get("account_with_dummy_validate").unwrap();
+    let account_contract = initial_state.deployed_cairo1_contracts.get("account_with_dummy_validate").unwrap();
 
     // We want to declare a fresh (never-before-declared) contract, so we don't want to reuse
     // anything from the test fixtures, and we need to do it "by hand". The transaction will
     // error if the class trie already contains the class we are trying to deploy.
-    let (_, sierra_class, casm_class) = load_cairo1_contract("empty_contract");
+    let (_, sierra_class, casm_class) = load_cairo1_feature_contract("empty_contract");
 
     // We also need to write the class and compiled class facts so that the FFC will contain them
     // during block re-execution.
@@ -110,11 +110,11 @@ async fn declare_cairo1_account(
 
     let sender_address = account_contract.address;
 
-    let contract_class = compiled_contract_class_cl2vm(&casm_class).unwrap();
+    let contract_class = casm_class.to_blockifier_contract_class().unwrap();
     let class_hash = starknet_api::core::ClassHash::try_from(contract_class_hash).unwrap();
     let compiled_class_hash = CompiledClassHash::try_from(compiled_class_hash).unwrap();
 
-    let class_info = ClassInfo::new(&contract_class, sierra_class.sierra_program.len(), 0).unwrap();
+    let class_info = ClassInfo::new(&contract_class.into(), sierra_class.sierra_program.len(), 0).unwrap();
 
     let declare_tx = blockifier::test_utils::declare::declare_tx(
         declare_tx_args! {
@@ -122,7 +122,7 @@ async fn declare_cairo1_account(
             sender_address,
             version: tx_version,
             nonce: nonce_manager.next(sender_address),
-            class_hash: class_hash.into(),
+            class_hash: class_hash,
             compiled_class_hash,
         },
         class_info,
@@ -152,16 +152,15 @@ async fn declare_v1_cairo0_account(
 
     let mut nonce_manager = NonceManager::default();
 
-    let sender_address = initial_state.cairo0_contracts.get("account_with_dummy_validate").unwrap().address;
-    let test_contract = initial_state.cairo0_contracts.get("test_contract").unwrap();
+    let sender_address = initial_state.deployed_cairo0_contracts.get("account_with_dummy_validate").unwrap().address;
+    let test_contract = initial_state.deployed_cairo0_contracts.get("test_contract").unwrap();
 
     let tx_version = TransactionVersion::ONE;
 
-    let class_hash = test_contract.class_hash;
+    let class_hash = test_contract.declaration.class_hash;
 
-    let class = deprecated_contract_class_api2vm(&test_contract.class).unwrap();
-
-    let class_info = calculate_class_info_for_testing(class);
+    let blockifier_class = test_contract.declaration.class.get_blockifier_contract_class().unwrap().clone();
+    let class_info = calculate_class_info_for_testing(blockifier_class.into());
 
     let declare_tx = blockifier::test_utils::declare::declare_tx(
         declare_tx_args! {
@@ -169,7 +168,7 @@ async fn declare_v1_cairo0_account(
             sender_address,
             version: tx_version,
             nonce: nonce_manager.next(sender_address),
-            class_hash: class_hash.into(),
+            class_hash: class_hash,
         },
         class_info,
     );
