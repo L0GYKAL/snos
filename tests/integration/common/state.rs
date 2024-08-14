@@ -485,7 +485,7 @@ pub async fn initial_state_erc20(
 ) -> StarknetTestState {
     let account_with_dummy_validate = load_cairo1_contract("account_with_dummy_validate");
     let test_contract = load_cairo1_contract("test_contract");
-    let erc20_contract = load_cairo1_contract("erc20_cairo_erc_20.contract_class");
+    let erc20_contract = load_cairo1_contract("erc20_cairo_MyToken.contract_class");
 
     StarknetStateBuilder::new(&block_context)
         .add_cairo1_contract(

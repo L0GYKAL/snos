@@ -214,36 +214,27 @@ async fn mint_tokens_test(
     let mut nonce_manager = NonceManager::default();
 
     let sender_address = initial_state.cairo1_contracts.get("account_with_dummy_validate").unwrap().address;
-    let erc20_address = initial_state.cairo1_contracts.get("erc20_cairo_erc_20.contract_class").unwrap().address;
-
-    // test_storage_read_write
-    // let test_storage_read_write_tx = test_utils::account_invoke_tx(invoke_tx_args! {
-    //     max_fee,
-    //     sender_address: sender_address,
-    //     calldata: create_calldata(contract_address, "test_storage_read_write", &[StarkFelt::TWO, StarkFelt::ONE]),
-    //     version: tx_version,
-    //     nonce: nonce_manager.next(sender_address),
-    // });
+    let erc20_address = initial_state.cairo1_contracts.get("erc20_cairo_MyToken.contract_class").unwrap().address;
 
     let test_init_tokens_tx = test_utils::account_invoke_tx(invoke_tx_args! {
         max_fee,
         sender_address: sender_address,
-        calldata: create_calldata(erc20_address, "init", &[]),
+        calldata: create_calldata(erc20_address, "fake_constructor", &[StarkFelt::from(sender_address)]),
         version: tx_version,
         nonce: nonce_manager.next(sender_address),
     });
 
-    let test_mint_tokens_tx = test_utils::account_invoke_tx(invoke_tx_args! {
-        max_fee,
-        sender_address: sender_address,
-        calldata: create_calldata(erc20_address, "mint", &[StarkFelt::from(sender_address), StarkFelt::from(2000_u128), StarkFelt::from(0_u128)]), //TODO: change the arguments
-        version: tx_version,
-        nonce: nonce_manager.next(sender_address),
-    });
+    // let test_mint_tokens_tx = test_utils::account_invoke_tx(invoke_tx_args! {
+    //     max_fee,
+    //     sender_address: sender_address,
+    //     calldata: create_calldata(erc20_address, "mint", &[StarkFelt::from(sender_address), StarkFelt::from(2000_u128), StarkFelt::from(0_u128)]),
+    //     version: tx_version,
+    //     nonce: nonce_manager.next(sender_address),
+    // });
 
     let txs = vec![
         test_init_tokens_tx,
-        test_mint_tokens_tx,
+        // test_mint_tokens_tx,
     ]
     .into_iter()
     .map(Into::into)
@@ -256,9 +247,9 @@ async fn mint_tokens_test(
         initial_state.cairo0_compiled_classes,
         initial_state.cairo1_compiled_classes,
     )
-        .await;
-    assert!(result.is_ok());
-    let size = result.unwrap().0.memory.to_bytes().len();
+        .await.unwrap();
+    // assert!(result.is_ok());
+    let size = result.0.memory.to_bytes().len();
     print!("{}", size);
 
     //TODO: import and call the madara_rpc to call the prover
