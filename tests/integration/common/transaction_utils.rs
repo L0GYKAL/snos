@@ -9,14 +9,12 @@ use blockifier::transaction::account_transaction::AccountTransaction::{Declare, 
 use blockifier::transaction::objects::{TransactionInfo, TransactionInfoCreator};
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::{ExecutableTransaction, L1HandlerTransaction};
-use cairo_lang_starknet_classes::casm_contract_class::CasmContractClass;
 use cairo_vm::vm::errors::cairo_run_errors::CairoRunError::VmException;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use cairo_vm::Felt252;
 use num_bigint::BigUint;
 use rstest::rstest;
 use starknet_api::core::{calculate_contract_address, ClassHash, ContractAddress, PatriciaKey};
-use starknet_api::deprecated_contract_class::ContractClass as DeprecatedCompiledClass;
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::{
@@ -40,6 +38,8 @@ use starknet_os::starknet::core::os::transaction_hash::{L1_GAS, L2_GAS};
 use starknet_os::storage::storage::Storage;
 use starknet_os::utils::felt_api2vm;
 use starknet_os::{config, run_os};
+use starknet_os_types::casm_contract_class::GenericCasmContractClass;
+use starknet_os_types::deprecated_compiled_class::GenericDeprecatedCompiledClass;
 
 use crate::common::block_utils::os_hints;
 
@@ -774,8 +774,8 @@ async fn execute_txs<S>(
     mut state: CachedState<SharedState<S, PedersenHash>>,
     block_context: &BlockContext,
     txs: Vec<Transaction>,
-    deprecated_contract_classes: HashMap<ClassHash, DeprecatedCompiledClass>,
-    contract_classes: HashMap<ClassHash, CasmContractClass>,
+    deprecated_contract_classes: HashMap<ClassHash, GenericDeprecatedCompiledClass>,
+    contract_classes: HashMap<ClassHash, GenericCasmContractClass>,
 ) -> (StarknetOsInput, ExecutionHelperWrapper<S>)
 where
     S: Storage,
@@ -814,8 +814,8 @@ pub async fn execute_txs_and_run_os<S>(
     state: CachedState<SharedState<S, PedersenHash>>,
     block_context: BlockContext,
     txs: Vec<Transaction>,
-    deprecated_contract_classes: HashMap<ClassHash, DeprecatedCompiledClass>,
-    contract_classes: HashMap<ClassHash, CasmContractClass>,
+    deprecated_contract_classes: HashMap<ClassHash, GenericDeprecatedCompiledClass>,
+    contract_classes: HashMap<ClassHash, GenericCasmContractClass>,
 ) -> Result<(CairoPie, StarknetOsOutput), SnOsError>
 where
     S: Storage,

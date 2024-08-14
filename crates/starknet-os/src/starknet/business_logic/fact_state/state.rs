@@ -5,14 +5,15 @@ use blockifier::execution::contract_class::ContractClass;
 use blockifier::state::cached_state::CommitmentStateDiff;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{StateReader, StateResult};
-use cairo_lang_starknet_classes::casm_contract_class::CasmContractClass;
 use cairo_vm::types::errors::math_errors::MathError;
 use cairo_vm::Felt252;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
-use starknet_api::deprecated_contract_class::ContractClass as DeprecatedContractClass;
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_crypto::FieldElement;
+use starknet_os_types::casm_contract_class::GenericCasmContractClass;
+use starknet_os_types::deprecated_compiled_class::GenericDeprecatedCompiledClass;
+use starknet_os_types::hash::Hash;
 
 use crate::config::{
     COMPILED_CLASS_HASH_COMMITMENT_TREE_HEIGHT, CONTRACT_ADDRESS_BITS, CONTRACT_STATES_COMMITMENT_TREE_HEIGHT,
@@ -28,8 +29,7 @@ use crate::starkware_utils::commitment_tree::base_types::{Height, TreeIndex};
 use crate::starkware_utils::commitment_tree::binary_fact_tree::BinaryFactTree;
 use crate::starkware_utils::commitment_tree::errors::TreeError;
 use crate::starkware_utils::commitment_tree::patricia_tree::patricia_tree::PatriciaTree;
-use crate::storage::storage::{DbObject, FactFetchingContext, Hash, HashFunctionType, Storage, StorageError};
-use crate::storage::storage_utils::{compiled_contract_class_cl2vm, deprecated_contract_class_api2vm};
+use crate::storage::storage::{DbObject, FactFetchingContext, HashFunctionType, Storage, StorageError};
 use crate::utils::{execute_coroutine, felt_api2vm, felt_vm2api};
 
 /// A class representing a combination of the onchain and offchain state.
@@ -44,10 +44,10 @@ where
     /// Optional because some older states did not have class commitment.
     pub contract_classes: Option<PatriciaTree>,
     pub ffc: FactFetchingContext<S, H>,
-    ffc_for_class_hash: FactFetchingContext<S, PoseidonHash>,
+    pub ffc_for_class_hash: FactFetchingContext<S, PoseidonHash>,
     /// Set of all the contracts in this state. Used to cache contract values to avoid
     /// traversing the tree.
-    contract_addresses: HashSet<TreeIndex>,
+    pub contract_addresses: HashSet<TreeIndex>,
 }
 
 // For some reason, derive(Clone) wants to have S: Clone and H: Clone.
@@ -383,7 +383,7 @@ where
     async fn get_deprecated_compiled_class(
         &mut self,
         compiled_class_hash: CompiledClassHash,
-    ) -> Result<Option<DeprecatedContractClass>, StorageError> {
+    ) -> Result<Option<GenericDeprecatedCompiledClass>, StorageError> {
         let storage = self.ffc.acquire_storage().await;
 
         DeprecatedCompiledClassFact::get(storage.deref(), compiled_class_hash.0.bytes())
@@ -394,7 +394,7 @@ where
     async fn get_compiled_class(
         &mut self,
         compiled_class_hash: CompiledClassHash,
-    ) -> Result<Option<CasmContractClass>, StorageError> {
+    ) -> Result<Option<GenericCasmContractClass>, StorageError> {
         let storage = self.ffc.acquire_storage().await;
 
         CompiledClassFact::get(storage.deref(), compiled_class_hash.0.bytes())
@@ -413,14 +413,18 @@ where
         let deprecated_compiled_class = self.get_deprecated_compiled_class(compiled_class_hash).await?;
 
         if let Some(deprecated_compiled_class) = deprecated_compiled_class {
-            return Ok(deprecated_contract_class_api2vm(&deprecated_compiled_class).unwrap());
+            let blockifier_class = deprecated_compiled_class.to_blockifier_contract_class().unwrap();
+            return Ok(blockifier_class.into());
         }
 
         // The given hash does not match any deprecated class; try the new compiled classes.
         let compiled_class = self.get_compiled_class(compiled_class_hash).await?;
 
         if let Some(compiled_class) = compiled_class {
-            return Ok(compiled_contract_class_cl2vm(&compiled_class).unwrap());
+            let blockifier_contract_class = compiled_class
+                .to_blockifier_contract_class()
+                .map_err(|e| StateError::StateReadError(format!("failed to convert to Blockifier CASM class: {e}")))?;
+            return Ok(blockifier_contract_class.into());
         }
 
         Err(StateError::UndeclaredClassHash(ClassHash(compiled_class_hash.0)))

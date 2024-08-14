@@ -5,6 +5,7 @@ use cairo_vm::Felt252;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+use starknet_os_types::hash::Hash;
 
 use crate::starkware_utils::commitment_tree::base_types::TreeIndex;
 use crate::starkware_utils::commitment_tree::binary_fact_tree::{
@@ -14,7 +15,7 @@ use crate::starkware_utils::commitment_tree::errors::TreeError;
 use crate::starkware_utils::commitment_tree::leaf_fact::LeafFact;
 use crate::starkware_utils::commitment_tree::patricia_tree::patricia_tree::PatriciaTree;
 use crate::starkware_utils::serializable::{DeserializeError, Serializable, SerializationPrefix, SerializeError};
-use crate::storage::storage::{DbObject, Fact, FactFetchingContext, Hash, HashFunctionType, Storage};
+use crate::storage::storage::{DbObject, Fact, FactFetchingContext, HashFunctionType, Storage};
 use crate::utils::{Felt252Num, Felt252Str};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -106,7 +107,7 @@ impl CommitmentInfo {
     /// Returns a commitment info that corresponds to the given modifications.
     pub async fn create_from_modifications<S, H, LF>(
         previous_tree: PatriciaTree,
-        expected_updated_root: Felt252,
+        expected_updated_root: Option<Felt252>,
         modifications: Vec<(TreeIndex, LF)>,
         ffc: &mut FactFetchingContext<S, H>,
     ) -> Result<Self, CommitmentInfoError>
@@ -122,11 +123,13 @@ impl CommitmentInfo {
         let actual_updated_tree = previous_tree.update(ffc, modifications, &mut commitment_facts).await?;
         let actual_updated_root = Felt252::from_bytes_be_slice(&actual_updated_tree.root);
 
-        if actual_updated_root != expected_updated_root {
-            return Err(CommitmentInfoError::UpdatedRootMismatch(
-                actual_updated_root.to_biguint(),
-                expected_updated_root.to_biguint(),
-            ));
+        if let Some(expected_updated_root) = expected_updated_root {
+            if actual_updated_root != expected_updated_root {
+                return Err(CommitmentInfoError::UpdatedRootMismatch(
+                    actual_updated_root.to_biguint(),
+                    expected_updated_root.to_biguint(),
+                ));
+            }
         }
 
         // Note: unwrapping is safe here as we wrap the value ourselves a few lines above.
@@ -163,7 +166,7 @@ impl CommitmentInfo {
 
         Self::create_from_modifications(
             previous_tree,
-            Felt252::from_bytes_be_slice(&expected_updated_tree.root),
+            Some(Felt252::from_bytes_be_slice(&expected_updated_tree.root)),
             modifications_vec,
             ffc,
         )
@@ -222,7 +225,7 @@ where
 
         CommitmentInfo::create_from_modifications(
             self.previous_tree.clone(),
-            self.expected_updated_root,
+            Some(self.expected_updated_root),
             final_modifications,
             &mut self.ffc,
         )
