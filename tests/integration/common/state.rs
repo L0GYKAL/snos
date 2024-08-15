@@ -630,18 +630,18 @@ pub async fn initial_state_erc20(
     block_context: BlockContext,
     #[from(init_logging)] _logging: (),
 ) -> StarknetTestState {
-    let account_with_dummy_validate = load_cairo1_contract("account_with_dummy_validate");
-    let test_contract = load_cairo1_contract("test_contract");
-    let erc20_contract = load_cairo1_contract("erc20_cairo_MyToken.contract_class");
+    let account_with_dummy_validate = load_cairo1_feature_contract("account_with_dummy_validate");
+    let test_contract = load_cairo1_feature_contract("test_contract");
+    let erc20_contract = load_cairo1_feature_contract("erc20_cairo_MyToken.contract_class");
 
     StarknetStateBuilder::new(&block_context)
-        .add_cairo1_contract(
+        .deploy_cairo1_contract(
             account_with_dummy_validate.0,
             account_with_dummy_validate.1,
             account_with_dummy_validate.2,
         )
-        .add_cairo1_contract(erc20_contract.0, erc20_contract.1, erc20_contract.2)
-        .add_cairo1_contract(test_contract.0, test_contract.1, test_contract.2)
+        .deploy_cairo1_contract(erc20_contract.0, erc20_contract.1, erc20_contract.2)
+        .deploy_cairo1_contract(test_contract.0, test_contract.1, test_contract.2)
         .set_default_balance(BALANCE, BALANCE)
         .build()
         .await

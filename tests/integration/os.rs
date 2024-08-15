@@ -214,8 +214,8 @@ async fn mint_tokens_test(
     let initial_state = initial_state_erc20.await;
     let mut nonce_manager = NonceManager::default();
 
-    let sender_address = initial_state.cairo1_contracts.get("account_with_dummy_validate").unwrap().address;
-    let erc20_address = initial_state.cairo1_contracts.get("erc20_cairo_MyToken.contract_class").unwrap().address;
+    let sender_address = initial_state.deployed_cairo1_contracts.get("account_with_dummy_validate").unwrap().address;
+    let erc20_address = initial_state.deployed_cairo1_contracts.get("erc20_cairo_MyToken.contract_class").unwrap().address;
 
     let test_init_tokens_tx = test_utils::account_invoke_tx(invoke_tx_args! {
         max_fee,
